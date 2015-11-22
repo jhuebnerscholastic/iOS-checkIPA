@@ -159,7 +159,7 @@ class IntegrityCheck(object):
                             'description': 'formatted incorrectly'})
 
         if self.errors['appid_bundleseed_mismatch']:
-            appid_parts = self.profile['Entitlements']['application-identifier'].split('.', 1)
+            appid_parts = self.profile['Entitlements']['/out_'].split('.', 1)
             appid_suffix = appid_parts[1]
             bundleid_val = self.data['CFBundleIdentifier']
             desc = 'BundleID "%s" does not match AppID "%s"' % (bundleid_val, appid_suffix)
@@ -239,7 +239,12 @@ class IntegrityCheck(object):
             txt.append('  Release Version: %s' % (self.data['CFBundleShortVersionString']))
         if 'CFBundleVersion' in self.data:
             txt.append('  Build Version: %s' % (self.data['CFBundleVersion']))
-
+        if ('Name' in self.profile):
+            txt.append('  Profile Name: %s' % (self.profile['Name']))
+        if ('application-identifier' in self.profile['Entitlements']):
+            txt.append('  profile application-identifier: %s' % (self.profile['Entitlements']['application-identifier']))
+        else: 
+            txt.append('  profile application-identifier: %s' % ("unknown"))
         if ('ExpirationDate' in self.profile):
             txt.append('  Expiration Date: %s' % (self.profile['ExpirationDate']))
 
@@ -285,6 +290,7 @@ class IntegrityCheck(object):
 
         for line in txt:
             print('    %s' % (line))
+  
 
     # end output_report
 
@@ -298,10 +304,11 @@ class IntegrityCheck(object):
         self.check_bundle_id()
         self.check_bundle_seed()
         self.check_appid()
-        self.check_push()
+        #self.check_push()
         self.check_dist_method()
         self.check_dist_profile()
         self.check_expiration_date()
+    #    self.check_executable_size()
 
     def check_expiration_date(self):
         if ('ExpirationDate' in self.profile):
@@ -464,7 +471,8 @@ class IntegrityCheck(object):
         elif 'ProvisionedDevices' in self.profile:
             self.ipa_info['adhoc'] = True
         else:
-            self.errors['distmethod'] = True
+            self.ipa_info['app_store'] = True
+            #self.errors['distmethod'] = True
 
     def _initialize_results_data(self):
         # All errors and warnings are to be declared here and set to
