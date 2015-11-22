@@ -253,8 +253,10 @@ class IntegrityCheck(object):
         elif self.ipa_info['enterprise'] and not self.ipa_info['adhoc']:
             ipa_type = 'Enterprise'
         else:
-            ipa_type = 'unknown distribution type'
-            report_errors.append({'label': 'Distribution', 'description': 'unknown distribution type'})
+            if((len(provisioned_devices) == 0) and not(self.profile['Entitlements']['get-task-allow'])): 
+                ipa_type = 'AppStore Submission'
+            else:
+                report_errors.append({'label': 'Distribution', 'description': 'unknown distribution type'})
         txt.append('  Distribution Profile Type: %s' % (ipa_type))
 
         if len(provisioned_devices) > 0:
