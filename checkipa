@@ -159,7 +159,7 @@ class IntegrityCheck(object):
                             'description': 'formatted incorrectly'})
 
         if self.errors['appid_bundleseed_mismatch']:
-            appid_parts = self.profile['Entitlements']['/out_'].split('.', 1)
+            appid_parts = self.profile['Entitlements']['application-identifier'].split('.', 1)
             appid_suffix = appid_parts[1]
             bundleid_val = self.data['CFBundleIdentifier']
             desc = 'BundleID "%s" does not match AppID "%s"' % (bundleid_val, appid_suffix)
