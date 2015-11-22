@@ -233,9 +233,12 @@ class IntegrityCheck(object):
 
         if 'CFBundleName' in self.data:
             txt.append('  Name: %s' % (self.data['CFBundleName']))
-
+        if 'CFBundleIdentifier' in self.data:
+            txt.append('  BundleID: %s' % (self.data['CFBundleIdentifier']))
+        if 'CFBundleShortVersionString' in self.data:
+            txt.append('  Release Version: %s' % (self.data['CFBundleShortVersionString']))
         if 'CFBundleVersion' in self.data:
-            txt.append('  Version: %s' % (self.data['CFBundleVersion']))
+            txt.append('  Build Version: %s' % (self.data['CFBundleVersion']))
 
         if ('ExpirationDate' in self.profile):
             txt.append('  Expiration Date: %s' % (self.profile['ExpirationDate']))
