@@ -59,6 +59,44 @@ def dump(obj):
     import inspect
     pprint(inspect.getmembers(obj))
 
+#---------------------------------------------------------------------
+# UdidCheck Class
+#---------------------------------------------------------------------
+class UdidCheck(object):
+    def __init__(self, udids, provision):
+        msg = ''
+        if 'ProvisionedDevices' in provision:
+            provisioned_ids = provision['ProvisionedDevices']
+            if len(provisioned_ids) > 1:
+                delim_rx = re.compile(r'\s+')
+                udid_list = delim_rx.split(udids)
+                matches = list(set(udid_list) & set(provisioned_ids))
+
+                # SUCCESS!
+                if (len(matches) > 0):
+                    msg_a = []
+                    for udid in udid_list:
+                        if udid == "":
+                            continue
+                        if udid in matches:
+                            msg_a.append('Provisioned: %s' % (udid))
+                        else:
+                            msg_a.append('  not found: %s' % (udid))
+                    msg = "\n".join(msg_a)
+
+                else:
+                    msg = 'no matching devices found'
+        else:
+            msg = 'no provisioned devices in this app'
+        self.output(msg)
+    # end __init__
+
+    def output(self, msg):
+        print("")
+        for line in msg.split("\n"):
+            print('    %s' % (line))
+        print("")
+# end UdidCheck class
 
 #---------------------------------------------------------------------
 # IntegrityCheck Class
