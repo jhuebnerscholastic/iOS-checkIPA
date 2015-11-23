@@ -240,9 +240,9 @@ class IntegrityCheck(object):
         if 'CFBundleIdentifier' in self.data:
             txt.append('  BundleID: %s' % (self.data['CFBundleIdentifier']))
         if 'CFBundleShortVersionString' in self.data:
-            txt.append('  Release Version: %s' % (self.data['CFBundleShortVersionString']))
+            txt.append('  Release Version (CFBundleShortVersionString): %s' % (self.data['CFBundleShortVersionString']))
         if 'CFBundleVersion' in self.data:
-            txt.append('  Build Version: %s' % (self.data['CFBundleVersion']))
+            txt.append('  Build Version (CFBundleVersion): %s' % (self.data['CFBundleVersion']))
         if ('Name' in self.profile):
             txt.append('  Profile Name: %s' % (self.profile['Name']))
         if ('application-identifier' in self.profile['Entitlements']):
