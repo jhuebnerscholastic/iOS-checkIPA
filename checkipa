@@ -242,7 +242,13 @@ class IntegrityCheck(object):
         if ('Name' in self.profile):
             txt.append('  Profile Name: %s' % (self.profile['Name']))
         if ('application-identifier' in self.profile['Entitlements']):
-            txt.append('  profile application-identifier: %s' % (self.profile['Entitlements']['application-identifier']))
+            appId = self.profile['Entitlements']['application-identifier'];
+            appId = appId.replace("NJTZ42342L","ScholasticDev");
+            appId = appId.replace("7S643WDT74","ScholasticStore");
+            appId = appId.replace("ZNV3UHXFUQ","HMH");
+            appId = appId.replace("B9JA5NZZ7E","JohnHuebner");
+
+            txt.append('  profile application-identifier: %s' % (appId))
         else: 
             txt.append('  profile application-identifier: %s' % ("unknown"))
         if ('ExpirationDate' in self.profile):
@@ -691,7 +697,9 @@ def get_options():
     optp.add_option('-u', '--udids', action='store', dest='udids',
                     help='''check if udids are provisioned
                         ''')
-
+    optp.add_option('-t', '--teams', action='store', dest='teams',
+                    help='''give names to teams
+                        ''')
     optp.add_option('-v', '--verbose', action='store_true',
                     dest='verbose', default=False,
                     help='''print data structures to stdout
