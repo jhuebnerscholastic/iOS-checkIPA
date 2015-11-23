@@ -47,6 +47,8 @@ import re
 import zipfile
 import plistlib
 import optparse
+import hashlib
+import commands
 
 DEFAULT_ENCODING = 'utf-8'
 VERSION_NUMBER = '1.5'
@@ -59,46 +61,6 @@ def dump(obj):
 
 
 #---------------------------------------------------------------------
-# UdidCheck Class
-#---------------------------------------------------------------------
-class UdidCheck(object):
-    def __init__(self, udids, provision):
-        msg = ''
-        if 'ProvisionedDevices' in provision:
-            provisioned_ids = provision['ProvisionedDevices']
-            if len(provisioned_ids) > 1:
-                delim_rx = re.compile(r'\s+')
-                udid_list = delim_rx.split(udids)
-                matches = list(set(udid_list) & set(provisioned_ids))
-
-                # SUCCESS!
-                if (len(matches) > 0):
-                    msg_a = []
-                    for udid in udid_list:
-                        if udid == "":
-                            continue
-                        if udid in matches:
-                            msg_a.append('Provisioned: %s' % (udid))
-                        else:
-                            msg_a.append('  not found: %s' % (udid))
-                    msg = "\n".join(msg_a)
-
-                else:
-                    msg = 'no matching devices found'
-        else:
-            msg = 'no provisioned devices in this app'
-        self.output(msg)
-    # end __init__
-
-    def output(self, msg):
-        print("")
-        for line in msg.split("\n"):
-            print('    %s' % (line))
-        print("")
-# end UdidCheck class
-
-
-#---------------------------------------------------------------------
 # IntegrityCheck Class
 #---------------------------------------------------------------------
 class IntegrityCheck(object):
@@ -108,6 +70,9 @@ class IntegrityCheck(object):
 
     def __init__(self, params):
         self.data = params['info']
+        self.ipa_md5 = params['ipa_md5']
+        self.ipa_size = params['ipa_size']
+        self.executable_info = params['executable_info']
         self.profile = params['mobileprovision']
         self.verbose = params['verbose']
         self.ipa_filename = params['ipa_filename']
@@ -115,6 +80,7 @@ class IntegrityCheck(object):
         self.warnings = {}
         self.errors = {}
         self.ipa_info = {}
+        self.executable_size = -1
 
         self._initialize_results_data()
 
@@ -271,7 +237,10 @@ class IntegrityCheck(object):
                 txt.append('  %s' % (udid))
         else:
             txt.append('  Provisioned Devices (0):')
-
+        txt.append('  Package size: %2.2f GB' % (self.ipa_size/1000000000.0))
+        txt.append('  Executable size: %2.2f MB' % (self.executable_size/1000000.0))
+        txt.append('  MD5: %s ' % self.ipa_md5)
+        
         txt.append(vertical_spacer)
 
         # Warnings
@@ -302,6 +271,7 @@ class IntegrityCheck(object):
 
     # end output_report
 
+
     def get_provisioned_devices(self):
         if 'ProvisionedDevices' in self.profile:
             return self.profile['ProvisionedDevices']
@@ -312,11 +282,12 @@ class IntegrityCheck(object):
         self.check_bundle_id()
         self.check_bundle_seed()
         self.check_appid()
+        self.check_ipa_file_size()
         #self.check_push()
         self.check_dist_method()
         self.check_dist_profile()
         self.check_expiration_date()
-    #    self.check_executable_size()
+        self.check_executable_size()
 
     def check_expiration_date(self):
         if ('ExpirationDate' in self.profile):
@@ -481,6 +452,26 @@ class IntegrityCheck(object):
         else:
             self.ipa_info['app_store'] = True
             #self.errors['distmethod'] = True
+    def check_ipa_file_size(self):
+        if self.ipa_size > 4000000000:
+            self.errors['ipa_size'] = True
+
+
+    def check_executable_size(self):
+        size_rx = re.compile(r'^\s+size\s+(\d+)',re.MULTILINE)
+        sizes = size_rx.findall(self.executable_info)
+        maxsize = -1
+        for size_str in sizes:
+            size = int(size_str)
+            if size > maxsize:
+                maxsize = size 
+        self.executable_size = int(maxsize)
+        if 7 >= 7 :
+            if self.executable_size >= 60000000:
+                self.errors['size_exec_61'] = True
+        else:
+            if self.executable_size >= 80000000:
+                self.errors['size_exec_81'] = True
 
     def _initialize_results_data(self):
         # All errors and warnings are to be declared here and set to
@@ -568,6 +559,7 @@ class IntegrityCheck(object):
             "adhoc": False}
     # end initializeResultsData
 
+
     def verbose_output(self):
         print('')
         print('INFO:')
@@ -583,6 +575,7 @@ class IntegrityCheck(object):
         print('')
 
         print('checks completed: items marked True are problematic.')
+
 # end IntegrityCheck class
 
 
@@ -594,6 +587,7 @@ class ParseIPA(object):
     plist_file_rx = re.compile(r'Payload/.+?\.app/Info.plist$')
     plist_misnamed_payload_file_rx = re.compile(r'payload/.+?\.app/Info.plist$')
     provision_file_rx = re.compile(r'\bembedded.mobileprovision$')
+    plist_executable_rx = re.compile(r'Payload/(.+)\.app/')
     xml_rx = re.compile(r'<\??xml')
     provision_xml_rx = re.compile(r'<\?xml.+</plist>', re.DOTALL)
 
@@ -602,6 +596,8 @@ class ParseIPA(object):
         self.provision_data = {}
         self.errors = []
         self.ipa_filename = ipa_filename
+        self.ipa_md5 = 'unknown'
+        self.ipa_size = 'unknown'
         self.full_path_plist_filename = ''
         self.temp_directory = ''
 
@@ -624,6 +620,37 @@ class ParseIPA(object):
         return {'filename': filename, 'zip_obj': zip_obj}
     # end get_filename_from_ipa()
 
+    def get_package_size(self):
+        self.ipa_file_stat =  os.stat(self.ipa_filename)
+        self.ipa_size = self.ipa_file_stat.st_size
+        return self.ipa_size 
+
+    # end check_package_size
+
+    def  get_ipa_md5(self):
+        self.ipa_md5 = hashlib.md5(open(self.ipa_filename,'rb').read()).hexdigest()
+        return self.ipa_md5 
+
+    def get_exec_filename_from_ipa(self):
+        zip_obj = zipfile.ZipFile(self.ipa_filename, 'r')
+        
+        filenames = zip_obj.namelist()
+        filename = ''
+        match = ParseIPA.plist_executable_rx.search(filenames[1])
+        base = match.group(1);
+        filename = 'Payload/%s.app/%s' % (base,base);
+        return filename
+    # end get_filename_from_ipa()
+
+    def get_executable_info(self):
+        with zipfile.ZipFile(self.ipa_filename) as ipa_zip:
+            exec_path=self.get_exec_filename_from_ipa()
+            with open('Exe', 'wb') as f:
+                f.write(ipa_zip.read(exec_path))
+        lipo = commands.getoutput('lipo -detailed_info Exe')
+        return lipo;
+
+
     def extract_provision_data(self):
         extract_info = self.get_filename_from_ipa('Provision')
         zip_obj = extract_info['zip_obj']
@@ -643,6 +670,26 @@ class ParseIPA(object):
 
         self.provision_data = data
     # end extract_provision_data
+
+    def extract_executable_data(self):
+            extract_info = self.get_exec_filename_from_ipa(self)
+            zip_obj = extract_info['zip_obj']
+            provision_filename = extract_info['filename']
+
+            data = {}
+            if provision_filename == '':
+                self.errors.append('Executable file not found in IPA')
+            else:
+                content = zip_obj.read(provision_filename)
+                match = ParseIPA.provision_xml_rx.search(content)
+                if (match is not None):
+                    provision_xml_content = match.group()
+                    data = plistlib.readPlistFromString(provision_xml_content)
+                else:
+                    self.errors.append('unable to parse embedded.mobileprovision file')
+
+            self.provision_data = data
+        # end extract_provision_data
 
     def extract_info_plist_data(self):
         extract_info = self.get_filename_from_ipa('Info')
@@ -717,6 +764,9 @@ def process_ipa(params):
     udids = params['udids']
     verbose = params['verbose']
 
+    parse.get_ipa_md5();
+    parse.get_package_size();
+
     parse.extract_info_plist_data()
     parse.extract_provision_data()
 
@@ -742,6 +792,9 @@ def process_ipa(params):
             # check integrity
             #---------------------------------------------------------------------
             params = {'info': parse.info_plist_data,
+                      'ipa_md5': parse.ipa_md5,
+                      'ipa_size': parse.ipa_size,
+                      'executable_info': parse.get_executable_info(),
                       'mobileprovision': parse.provision_data,
                       'verbose': verbose, 'ipa_filename': ipa_filename}
             IntegrityCheck(params)
