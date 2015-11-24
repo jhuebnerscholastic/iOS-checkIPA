@@ -98,6 +98,41 @@ class UdidCheck(object):
         print("")
 # end UdidCheck class
 
+
+#---------------------------------------------------------------------
+# IconCheck Class
+#---------------------------------------------------------------------
+class IconCheck(object):
+    def __init__(self, info, icon_filenames):
+        msg = ''
+        bundle_icons = []
+        if 'CFBundleIcons' in info:
+            bundle_icons = info['CFBundleIcons'];
+        elif 'CFBundleIcons~ipad' in info:
+            bundle_icons = info['CFBundleIcons~ipad'];
+        if (len(bundle_icons) >0 ):
+            icon_names = bundle_icons['CFBundlePrimaryIcon']['CFBundleIconFiles']
+            print ('Icons referenced by plist=%d' % (len(icon_names)))
+            if len(icon_names) > 1:
+                delim_rx = re.compile(r',\s*')
+                missing_messages = []
+                for icon in icon_names:
+                    if icon not in icon_filenames:
+                        missing_messages.append('Icon %s is referenced but not included' % (icon))
+                msg = "\n".join(missing_messages)
+            else:
+                msg = "No icon names"
+        self.output(msg)
+
+    # end __init__
+
+    def output(self, msg):
+        print("Missing Icons:\n")
+        for line in msg.split("\n"):
+            print('    %s' % (line))
+        print("")
+# end IconCheck class
+
 #---------------------------------------------------------------------
 # IntegrityCheck Class
 #---------------------------------------------------------------------
@@ -628,7 +663,8 @@ class ParseIPA(object):
     plist_executable_rx = re.compile(r'Payload/(.+)\.app/')
     xml_rx = re.compile(r'<\??xml')
     provision_xml_rx = re.compile(r'<\?xml.+</plist>', re.DOTALL)
-
+    icon_file_rx = re.compile(r'Payload/.+?\.app/(.*Icon.+png)$')
+    
     def __init__(self, ipa_filename):
         self.info_plist_data = {}
         self.provision_data = {}
@@ -669,14 +705,24 @@ class ParseIPA(object):
         self.ipa_md5 = hashlib.md5(open(self.ipa_filename,'rb').read()).hexdigest()
         return self.ipa_md5 
 
-    def get_exec_filename_from_ipa(self):
+    def get_icon_filenames_from_ipa(self):
         zip_obj = zipfile.ZipFile(self.ipa_filename, 'r')
         
         filenames = zip_obj.namelist()
-        filename = ''
-        match = ParseIPA.plist_executable_rx.search(filenames[1])
-        base = match.group(1);
-        filename = 'Payload/%s.app/%s' % (base,base);
+        icons=[]
+        for filename in filenames:
+            if ParseIPA.icon_file_rx.search(filename):
+                match = ParseIPA.icon_file_rx.search(filename)
+                icons.append(match.group(1))
+                print 'icon-file: %s' % match.group(1)
+        print "Total icon files: %d" % len(icons)
+        return icons
+    # end get_filename_from_ipa()
+
+    def get_exec_filename_from_ipa(self):
+        #if (self.data):
+        app_name = self.info_plist_data['CFBundleExecutable']
+        filename = 'Payload/%s.app/%s' % (app_name,app_name)
         return filename
     # end get_filename_from_ipa()
 
@@ -844,6 +890,10 @@ def process_ipa(params):
                 shutil.rmtree(parse.temp_directory)
         except IOError, ex:
             print(str(ex))
+
+        # check icons
+        print('Checking icons') 
+        IconCheck(parse.info_plist_data,parse.get_icon_filenames_from_ipa())
 
     else:
         pprint(parse.errors)
