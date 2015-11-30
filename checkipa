@@ -38,6 +38,7 @@
 # pylint: disable=R0912
 
 from pprint import pprint
+from stat import S_IMODE
 import sys
 import os
 import datetime
@@ -361,6 +362,8 @@ class IntegrityCheck(object):
         self.check_dist_profile()
         self.check_expiration_date()
         self.check_executable_size()
+        self.check_execute_permissions()
+        self.check_code_signing()
 
     def check_expiration_date(self):
         if ('ExpirationDate' in self.profile):
@@ -532,7 +535,7 @@ class IntegrityCheck(object):
 
     def check_executable_size(self):
         size_rx = re.compile(r'^\s+size\s+(\d+)',re.MULTILINE)
-        sizes = size_rx.findall(self.executable_info)
+        sizes = size_rx.findall(self.executable_info['lipo'])
         maxsize = -1
         for size_str in sizes:
             size = int(size_str)
@@ -545,6 +548,15 @@ class IntegrityCheck(object):
         else:
             if self.executable_size >= 80000000:
                 self.errors['size_exec_81'] = True
+    #end check_executable_size
+
+    def check_execute_permissions(self):
+        attr = self.executable_info['attr']
+        print "exec attributes = %o " % (attr)
+    #end check_execute_permissions
+
+    def check_code_signing(self):
+        print "Not checking code signing"
 
     def _initialize_results_data(self):
         # All errors and warnings are to be declared here and set to
@@ -674,24 +686,35 @@ class ParseIPA(object):
         self.ipa_size = 'unknown'
         self.full_path_plist_filename = ''
         self.temp_directory = ''
+        self.filenames = []
+        self.info_filename = 'unknown'
+        self.mobileprovision_filename = 'unknown'
+        self.app_name = 'unknown'
+        self.exec_external_attr = 0
+        self.zip_obj = 'notOpened'
+    #end __init__
 
+    def get_filenames_from_ipa(self):
+        self.zip_obj = zipfile.ZipFile(self.ipa_filename, 'r')
+        if (self.filenames == []):
+            self.filenames = self.zip_obj.namelist()
+            for fname in self.filenames:
+                if ParseIPA.plist_file_rx.search(fname):
+                    self.info_filename = fname
+                elif ParseIPA.plist_misnamed_payload_file_rx.search(fname):
+                    self.info_filename = fname
+                elif ParseIPA.provision_file_rx.search(fname):
+                    self.mobileprovision_filename = fname
+    #end get_filenames_from_ipa
+    
     def get_filename_from_ipa(self, filetype):
-        zip_obj = zipfile.ZipFile(self.ipa_filename, 'r')
+        self.get_filenames_from_ipa()
 
-        if filetype == 'Info':
-            regx = ParseIPA.plist_file_rx
-        elif filetype == 'Misnamed_Payload_Check':
-            regx = ParseIPA.plist_misnamed_payload_file_rx
+        if filetype == 'Info' or filetype == 'Misnamed_Payload_Check':
+            return {'filename': self.info_filename, 'zip_obj': self.zip_obj}
         else:
-            regx = ParseIPA.provision_file_rx
-
-        filenames = zip_obj.namelist()
-        filename = ''
-        for fname in filenames:
-            if regx.search(fname):
-                filename = fname
-                break
-        return {'filename': filename, 'zip_obj': zip_obj}
+            return {'filename': self.mobileprovision_filename, 'zip_obj': self.zip_obj}
+        
     # end get_filename_from_ipa()
 
     def get_package_size(self):
@@ -706,11 +729,10 @@ class ParseIPA(object):
         return self.ipa_md5 
 
     def get_icon_filenames_from_ipa(self):
-        zip_obj = zipfile.ZipFile(self.ipa_filename, 'r')
-        
-        filenames = zip_obj.namelist()
+        self.get_filenames_from_ipa()
+       
         icons=[]
-        for filename in filenames:
+        for filename in self.filenames:
             if ParseIPA.icon_file_rx.search(filename):
                 match = ParseIPA.icon_file_rx.search(filename)
                 icons.append(match.group(1))
@@ -727,12 +749,23 @@ class ParseIPA(object):
     # end get_filename_from_ipa()
 
     def get_executable_info(self):
+        exec_attr = 'unknown'
         with zipfile.ZipFile(self.ipa_filename) as ipa_zip:
             exec_path=self.get_exec_filename_from_ipa()
-            with open('Exe', 'wb') as f:
+            temp_name = 'Exe'
+            with open(temp_name, 'wb') as f:
                 f.write(ipa_zip.read(exec_path))
+            info = ipa_zip.getinfo(exec_path)
+            mode = info.external_attr >> 16 # Shift the bits 4 bytes to the right
+            exec_attr = S_IMODE(mode)
+            print "exec_attr(octal)=%o " % (exec_attr)
         lipo = commands.getoutput('lipo -detailed_info Exe')
-        return lipo;
+
+        return {'lipo' : lipo, 'attr' : exec_attr}
+
+    def get_exec_external_attr(self):
+        exec_filename = get_exec_filename_from_ipa();
+
 
 
     def extract_provision_data(self):
