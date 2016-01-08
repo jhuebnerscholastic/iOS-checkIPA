@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 #
+# Expecting Python 2.7 
+#
 # Scan IPA file and parse its Info.plist and embedded.mobileprovision
 # files. Perform checks of expected key/value relationships and report
 # the results.
@@ -225,6 +227,25 @@ class IntegrityCheck(object):
             exp_desc = '%s is in the past' % (self.profile['ExpirationDate'])
             results.append({'label': 'Expiration Date', 'description': exp_desc})
 
+        if self.errors["ipa_size"]:
+            size_desc = 'IPA size %s is larger than 4GB' % (self.profile['ipa_size'])
+            results.append({'label': 'IPA Size',
+                            'description': size_desc})
+
+        if self.errors["size_exec_61"]:
+            size_desc = 'Executable size %s is larger than 60MB per slice and iOS version is 7+ (allowing slices)' % (self.profile['ipa_size'])
+            results.append({'label': 'Executable Size',
+                            'description': size_desc})
+
+        if self.errors["size_exec_81"]:
+            size_desc = 'Executable size %s is larger than 80MB per slice and iOS version is < 7 (not allowing slices)' % (self.profile['ipa_size'])
+            results.append({'label': 'Executable Size',
+                            'description': size_desc})
+
+        if self.errors["exec_file_not_executable"]:
+            attr_desc = 'Executable permissions %s do not include execution )' % (self.profile['attr'])
+            results.append({'label': 'Executable Size',
+                            'description': attr_desc})
         return results
     # end detect_errors()
 
@@ -364,6 +385,7 @@ class IntegrityCheck(object):
         self.check_executable_size()
         self.check_execute_permissions()
         self.check_code_signing()
+        self.check_icons()
 
     def check_expiration_date(self):
         if ('ExpirationDate' in self.profile):
@@ -530,7 +552,9 @@ class IntegrityCheck(object):
             #self.errors['distmethod'] = True
     def check_ipa_file_size(self):
         if self.ipa_size > 4000000000:
-            self.errors['ipa_size'] = True
+            self.errors['ipa_size'] = True        
+        if self.ipa_size >  100000000:
+            self.warnings['ipa_ota_size'] = True
 
 
     def check_executable_size(self):
@@ -552,11 +576,21 @@ class IntegrityCheck(object):
 
     def check_execute_permissions(self):
         attr = self.executable_info['attr']
-        print "exec attributes = %o " % (attr)
+        if attr != 0o755:
+            self.errors['exec_file_not_executable'] = True
     #end check_execute_permissions
 
     def check_code_signing(self):
         print "Not checking code signing"
+
+    def check_icons(self):
+        print "Not checking icons"
+
+    def check_fullscreen(self):
+        print "Not checking fullscreen"
+
+    def check_entitlements(self):
+        print "Not checking Entitlements"
 
     def _initialize_results_data(self):
         # All errors and warnings are to be declared here and set to
@@ -607,7 +641,11 @@ class IntegrityCheck(object):
             "distmethod": False,
             "dist_dev": False,
             "dist_missing": False,
-            "expire_date_past": False}
+            "expire_date_past": False,
+            "ipa_size": False,
+            "size_exec_61": False,
+            "size_exec_81": False,
+            "exec_file_not_executable":False}
 
         # push => Push is disabled for this app
         #
@@ -620,6 +658,7 @@ class IntegrityCheck(object):
             "push": False,
             "push_apsenv": False,
             "dist_dev": False,
+            "ipa_ota_size": False,
             "expire_date_coming": False}
 
         # IPA info contains information about the IPA that is
@@ -887,6 +926,12 @@ def process_ipa(params):
     parse.extract_info_plist_data()
     parse.extract_provision_data()
 
+    #---------------------------------------------------------------------
+    # check icons
+    #---------------------------------------------------------------------
+    print('Checking icons') 
+    IconCheck(parse.info_plist_data,parse.get_icon_filenames_from_ipa())
+
     if len(parse.errors) == 0:
 
         #---------------------------------------------------------------------
@@ -899,6 +944,7 @@ def process_ipa(params):
             print('embedded.mobileprovision')
             pprint(parse.provision_data)
 
+  
         #---------------------------------------------------------------------
         # check provisioned devices
         #---------------------------------------------------------------------
@@ -924,9 +970,6 @@ def process_ipa(params):
         except IOError, ex:
             print(str(ex))
 
-        # check icons
-        print('Checking icons') 
-        IconCheck(parse.info_plist_data,parse.get_icon_filenames_from_ipa())
 
     else:
         pprint(parse.errors)
