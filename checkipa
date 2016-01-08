@@ -306,6 +306,7 @@ class IntegrityCheck(object):
             if((len(provisioned_devices) == 0) and not(self.profile['Entitlements']['get-task-allow'])): 
                 ipa_type = 'AppStore Submission'
             else:
+                ipa_type = 'unknown distribution type'
                 report_errors.append({'label': 'Distribution', 'description': 'unknown distribution type'})
         txt.append('  Distribution Profile Type: %s' % (ipa_type))
 
@@ -315,9 +316,13 @@ class IntegrityCheck(object):
                 txt.append('  %s' % (udid))
         else:
             txt.append('  Provisioned Devices (0):')
-        txt.append('  Package size: %2.2f GB' % (self.ipa_size/1000000000.0))
-        txt.append('  Executable size: %2.2f MB' % (self.executable_size/1000000.0))
-        txt.append('  MD5: %s ' % self.ipa_md5)
+
+        if self.ipa_size:
+            txt.append('  Package size: %2.2f GB' % (self.ipa_size/(10.0**9)))
+        if self.executable_size:
+            txt.append('  Executable size: %2.2f MB' % (self.executable_size/(10.0**6)))
+        if self.ipa_md5: 
+            txt.append('  MD5: %s ' % self.ipa_md5)
         
         txt.append(vertical_spacer)
 
@@ -540,9 +545,9 @@ class IntegrityCheck(object):
             self.ipa_info['app_store'] = True
             #self.errors['distmethod'] = True
     def check_ipa_file_size(self):
-        if self.ipa_size > 4000000000:
+        if self.ipa_size > 4*(10**9):
             self.errors['ipa_size'] = True        
-        if self.ipa_size >  100000000:
+        if self.ipa_size >  100 * (10**6):
             self.warnings['ipa_ota_size'] = True
 
 
@@ -556,10 +561,10 @@ class IntegrityCheck(object):
                 maxsize = size 
         self.executable_size = int(maxsize)
         if 7 >= 7 :
-            if self.executable_size >= 60000000:
+            if self.executable_size >= 60*(10**6):
                 self.errors['size_exec_61'] = True
         else:
-            if self.executable_size >= 80000000:
+            if self.executable_size >= 80*(10**6):
                 self.errors['size_exec_81'] = True
     #end check_executable_size
 
@@ -866,6 +871,7 @@ class ParseIPA(object):
                     provision_xml_content = match.group()
                     data = plistlib.readPlistFromString(provision_xml_content)
                 else:
+                    data = {"unable to parse embedded.mobileprovision file"}
                     self.errors.append('unable to parse embedded.mobileprovision file')
 
             self.provision_data = data
