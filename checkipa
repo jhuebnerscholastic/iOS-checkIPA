@@ -102,39 +102,7 @@ class UdidCheck(object):
 # end UdidCheck class
 
 
-#---------------------------------------------------------------------
-# IconCheck Class
-#---------------------------------------------------------------------
-class IconCheck(object):
-    def __init__(self, info, icon_filenames):
-        msg = ''
-        bundle_icons = []
-        if 'CFBundleIcons' in info:
-            bundle_icons = info['CFBundleIcons'];
-        elif 'CFBundleIcons~ipad' in info:
-            bundle_icons = info['CFBundleIcons~ipad'];
-        if (len(bundle_icons) >0 ):
-            icon_names = bundle_icons['CFBundlePrimaryIcon']['CFBundleIconFiles']
-            print ('Icons referenced by plist=%d' % (len(icon_names)))
-            if len(icon_names) > 1:
-                delim_rx = re.compile(r',\s*')
-                missing_messages = []
-                for icon in icon_names:
-                    if icon not in icon_filenames:
-                        missing_messages.append('Icon %s is referenced but not included' % (icon))
-                msg = "\n".join(missing_messages)
-            else:
-                msg = "No icon names"
-        self.output(msg)
 
-    # end __init__
-
-    def output(self, msg):
-        print("Missing Icons:\n")
-        for line in msg.split("\n"):
-            print('    %s' % (line))
-        print("")
-# end IconCheck class
 
 #---------------------------------------------------------------------
 # IntegrityCheck Class
@@ -152,6 +120,7 @@ class IntegrityCheck(object):
         self.profile = params['mobileprovision']
         self.verbose = params['verbose']
         self.ipa_filename = params['ipa_filename']
+        self.icons = params['icons']
 
         self.warnings = {}
         self.errors = {}
@@ -168,6 +137,7 @@ class IntegrityCheck(object):
             # debug only self.verbose_output()
 
         self.output_report()
+
 
     def detect_errors(self):
         results = []
@@ -246,6 +216,12 @@ class IntegrityCheck(object):
             attr_desc = 'Executable permissions %s do not include execution )' % (self.profile['attr'])
             results.append({'label': 'Executable Size',
                             'description': attr_desc})
+
+        if self.errors["missing"]:
+             missing_icons =  "\n".join(self.icons['missing'])
+             results.append({'label': 'Missing Icons',
+                            'description': missing_icons})
+
         return results
     # end detect_errors()
 
@@ -268,6 +244,13 @@ class IntegrityCheck(object):
         if self.warnings['expire_date_coming']:
             exp_desc = '%s is rapidly approaching' % (self.profile['ExpirationDate'])
             results.append({'label': 'Expiration Date', 'description': exp_desc})
+
+        if self.warnings["renamed"]:
+            print "ICO"
+            print 
+            renamed_icons =  "\n".join(self.icons['renamed'])
+            results.append({'label': 'Renamed Icons',
+                            'description': renamed_icons})
 
         return results
     # end detect_warnings()
@@ -365,6 +348,12 @@ class IntegrityCheck(object):
   
 
     # end output_report
+
+    def assert_no_errors(self):
+        num_errors = len(self.detect_errors())
+        if num_errors > 0:
+            print "Exiting with %d errors!\n" % (num_errors)
+            exit(num_errors)
 
 
     def get_provisioned_devices(self):
@@ -584,7 +573,11 @@ class IntegrityCheck(object):
         print "Not checking code signing"
 
     def check_icons(self):
-        print "Not checking icons"
+        #  return {'bundled_icons' : icon_names, 'icon_filenames':icon_filenames, 'missing': missing, 'renamed':renamed}
+        if len(self.icons['missing']) > 0 :
+            self.errors['missing_icons'] = True
+        elif len(self.icons['renamed']) > 0:
+            self.warnings['renamed'] = True
 
     def check_fullscreen(self):
         print "Not checking fullscreen"
@@ -645,7 +638,9 @@ class IntegrityCheck(object):
             "ipa_size": False,
             "size_exec_61": False,
             "size_exec_81": False,
-            "exec_file_not_executable":False}
+            "exec_file_not_executable":False,
+            "missing": False
+            }
 
         # push => Push is disabled for this app
         #
@@ -659,7 +654,8 @@ class IntegrityCheck(object):
             "push_apsenv": False,
             "dist_dev": False,
             "ipa_ota_size": False,
-            "expire_date_coming": False}
+            "expire_date_coming": False,
+            "renamed": False}
 
         # IPA info contains information about the IPA that is
         # unrelated to errors or warnings, such as if it's an App
@@ -805,7 +801,35 @@ class ParseIPA(object):
     def get_exec_external_attr(self):
         exec_filename = get_exec_filename_from_ipa();
 
-
+    def get_icon_lists(self, info, icon_filenames):
+        bundle_icons = []
+        missing = []
+        renamed = []
+        for icon in icon_filenames:
+                print "filename=" + icon
+        if 'CFBundleIcons' in info:
+            bundle_icons = info['CFBundleIcons'];
+        elif 'CFBundleIcons~ipad' in info:
+            bundle_icons = info['CFBundleIcons~ipad'];
+        if (len(bundle_icons) >0 ):
+            icon_names = bundle_icons['CFBundlePrimaryIcon']['CFBundleIconFiles']
+            print ('Icons referenced by plist=%d' % (len(icon_names)))
+            if len(icon_names) > 0:
+                for icon in icon_names:
+                    icon = icon + ".png"
+                    print "icon=" + icon
+                    if icon not in icon_filenames:
+                        ipad_name = icon.replace(".png","~ipad.png")
+                        if ipad_name not in icon_filenames:
+                            print "Missing: " + ipad_name
+                            missing.append('Icon %s is referenced but not included' % (icon))
+                        else:
+                            print "renamed: " + ipad_name
+                            renamed.append('\nicon %s is referenced but\nfile %s is included' % (icon,ipad_name))
+                    
+            else:
+                missing = ["No icon names"]
+        return {'bundled_icons' : icon_names, 'icon_filenames':icon_filenames, 'missing': missing, 'renamed':renamed}
 
     def extract_provision_data(self):
         extract_info = self.get_filename_from_ipa('Provision')
@@ -926,12 +950,8 @@ def process_ipa(params):
     parse.extract_info_plist_data()
     parse.extract_provision_data()
 
-    #---------------------------------------------------------------------
-    # check icons
-    #---------------------------------------------------------------------
-    print('Checking icons') 
-    IconCheck(parse.info_plist_data,parse.get_icon_filenames_from_ipa())
 
+    
     if len(parse.errors) == 0:
 
         #---------------------------------------------------------------------
@@ -959,8 +979,12 @@ def process_ipa(params):
                       'ipa_size': parse.ipa_size,
                       'executable_info': parse.get_executable_info(),
                       'mobileprovision': parse.provision_data,
-                      'verbose': verbose, 'ipa_filename': ipa_filename}
-            IntegrityCheck(params)
+                      'verbose': verbose, 
+                      'ipa_filename': ipa_filename,
+                      'icons':parse.get_icon_lists(parse.info_plist_data,parse.get_icon_filenames_from_ipa())
+                      }
+
+            integrity = IntegrityCheck(params)
         # end if check_udids
 
         # clean up tmp directory tree
@@ -970,6 +994,7 @@ def process_ipa(params):
         except IOError, ex:
             print(str(ex))
 
+        integrity.assert_no_errors()
 
     else:
         pprint(parse.errors)
